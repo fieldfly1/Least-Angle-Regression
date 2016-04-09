@@ -4,6 +4,8 @@
 % X: design matrix
 % Y: response
 % t: regularization term
+%
+% Note: We assume the X has been normalized and Y has zero mean
 
 % Returns:
 % 
@@ -21,7 +23,7 @@ function [beta A mu_hat gamma]= lars(X, Y, t)
 X = Normalize(X);
 Y = zero_mean_y(Y);
 
-% n: rows of design matrix, m: columns of design matrix
+% size of the design matrix
 [n m] = size(X);
 
 % mu_hat: the nx1 predictor vector; starts with zero
@@ -35,12 +37,10 @@ beta = zeros(1, m);
 A = [];
 
 % complement of the actice set
-% at the beginning, there are m of them, since m is the number of input variables
 A_c = 1:m;
 
-% record how many covariates being added to the active set
+% record how many related covariate column has been added to the active set
 N_Co_added = 0;
-
 
 % the prediction vector; previous step
 mu_old = zeros(n, 1);
@@ -76,8 +76,6 @@ for k = 1:m,
     % make a sign matrix (s_A) for the calculation of X_A
     % remerber that n is the total rows of the design matrix, which we setup at
     % the beginning
-    %s_A = [];
-    %for q = 1:n, s_A = [s_A; s']; end
     s_A=diag(s);
      
     % the number of zeros' coefficients out of all the regression
@@ -85,13 +83,14 @@ for k = 1:m,
     num_Zero_Coeff = length(A_c);
     
     % compute X_A, A_A and u_A and the inner product vector
-    X_A = X(:, A)*s_A; % X_A: the vector of covariate that have higher correlation than other covariates
+    X_A = X(:, A)*s_A; % X_A: the vector of covariate that have higher correlation than other covariates; multiply s_A to make all the terms positive
     G_A = X_A' * X_A; % G_A: the dot product of X_A to itself (Gram vector)
     One_A = ones(size(A,2), 1); % One_A: a vector of ones equaling |A|, the size of the active set
     s = One_A; % One_A: a vector of ones equaling |A|, the size of the active set
-    A_A = 1 / sqrt(s' * inv(G_A) * s);
+    invGA = inv(G_A);
+    A_A = 1 / sqrt(s' * invGA * s);
     
-    w_A = A_A * inv(G_A) * s; % w_A: unit vector making equal angles (less then 90%)
+    w_A = A_A * invGA * s; % w_A: unit vector making equal angles (less then 90%)
     u_A = X_A * w_A; % u_A: equiangular vector
     
     a = X' * u_A; % inner product vector
@@ -113,19 +112,12 @@ for k = 1:m,
             gamma_Test(j, :) = [ first_term, second_term ]
         end
         % update gamma's history and the row and column of the strictly
-        % positive minimum in gamma_Test
-%        if max(max(gamma_Test))<0
-%            break
-%        else
-            [gamma(i) min_i min_j] = min_pos(gamma_Test)
-%        addIndex = unique(A_c(min_i)); 
-            addIndex = A_c(min(min_i))
-%        end
+        [gamma(i) min_i min_j] = min_pos(gamma_Test)
+        addIndex = A_c(min(min_i))
     end
     
     % mu_hat
     % update the prediction vector
-    % set a temp var.
     mu_hat = mu_old + gamma(i)*u_A;
     mu_old = mu_hat;
     
@@ -136,13 +128,11 @@ for k = 1:m,
     beta_tmp = zeros(m, 1);
     
     % Update beta. Since each estimate of the prdictor vector 
-    % is mu_hat+ = mu_hat + gamma(i)*u_A, follow the papaer, algebraically, 
-    % each corresponding ith beta is gamma(i)*u_A
-   
+    % is mu_hat+ = mu_hat + gamma(i)*u_A, follow the papaer, algebraically, each corresponding ith beta is gamma(i)*w_A
     beta_tmp(A) =  beta(i, A)' + s_A *(gamma(i)*w_A);
     beta = [beta; beta_tmp'];  
     
-    % if t, the regularization term, is finite, then...
+    % if t, the regularization term, is finite, then..
     if t ~= inf,
         t_now = norm(beta_tmp(A), 1); % the l_1 norm of the current beta coefficients in the active set
         if t_now >= t,
@@ -154,10 +144,6 @@ end % end for loop
 
 end % end lars funtion
 
-
-function z_m_y = zero_mean_y(y),
-    z_m_y = y - mean(y);
-end
 
 function [m, I, J] = min_pos(X)
 
@@ -175,26 +161,3 @@ if m<0
 end
 end
 
-%feature normalization
-function nx = Normalize(X)
-% nx is the normalized X (the design matrix)
-% first, set nx as the original design matrix
-nx = X;
-
-% mu is the mean of each feature of the design matrix
-% use a zero matrix
-mu = zeros(1, size(X,2));
-mu = mean(X);
-
-% sig is the standard deviation of each feature of the design matrix
-% use a zero matrix first
-sig = zeros(1, size(X,2));
-sig = std(X);
-
-indices = 1:size(X,2); % [1,2,...,m] where m is the feature size
-
-for i = indices,
-    XminusMu = X(:, i) - mu(:, i);
-    nx(:,i) = XminusMu/sig(:, i);
-end
-end 
